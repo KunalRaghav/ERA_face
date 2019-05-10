@@ -4,12 +4,10 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.*
-import android.hardware.Camera
 import android.hardware.camera2.*
 import android.media.Image
 import android.media.ImageReader
 import android.os.Bundle
-import android.os.Environment
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
@@ -20,26 +18,46 @@ import androidx.fragment.app.Fragment
 import kotlinx.android.synthetic.main.fragment_preview.*
 import java.io.File
 import java.io.FileOutputStream
-import java.io.IOException
 import java.util.*
-import android.opengl.ETC1.getHeight
-import android.opengl.ETC1.getWidth
-import io.reactivex.ObservableOnSubscribe
-import io.reactivex.internal.operators.observable.ObservableCreate
+import android.util.DisplayMetrics
+import android.util.Size
+import android.widget.FrameLayout
+import android.widget.Toast
+import androidx.core.net.toUri
+import androidx.fragment.app.FragmentManager
+import com.google.firebase.ml.vision.FirebaseVision
+import com.google.firebase.ml.vision.common.FirebaseVisionImage
+import com.google.firebase.ml.vision.face.FirebaseVisionFaceDetector
+import com.google.firebase.ml.vision.face.FirebaseVisionFaceDetectorOptions
+import java.io.BufferedOutputStream
+import java.lang.Exception
+import java.nio.ByteBuffer
 
 
 class PreviewFragment: Fragment(),ActivityCompat.OnRequestPermissionsResultCallback {
 
 
     private lateinit var mFile: File;
-    private lateinit var images:Array<Image>;
-    private val MAX_HEIGHT = 1920;
+    lateinit var sizes: Array<Size>
+    var count_push =0;
+    private val MAX_HEIGHT = 1440;
     private val MAX_WIDTH = 1080;
-    private var imageReader = ImageReader.newInstance(MAX_WIDTH, MAX_HEIGHT, ImageFormat.JPEG, 10)
+    private val photo_height=1920;
+    private val photo_width=1080;
+    private var imageReader = ImageReader.newInstance(photo_width, photo_height, ImageFormat.JPEG, 30)
     private lateinit var captureSession: CameraCaptureSession;
     private lateinit var captureRequestBuilder: CaptureRequest.Builder
     val cameraManager by lazy { activity?.getSystemService(Context.CAMERA_SERVICE) as CameraManager };
     private lateinit var cameraDevice: CameraDevice;
+    val highAccuracyOpts = FirebaseVisionFaceDetectorOptions.Builder()
+            .setPerformanceMode(FirebaseVisionFaceDetectorOptions.ACCURATE)
+            .setLandmarkMode(FirebaseVisionFaceDetectorOptions.ALL_LANDMARKS)
+            .setClassificationMode(FirebaseVisionFaceDetectorOptions.ALL_CLASSIFICATIONS)
+            .build()
+    val realTimeOpts = FirebaseVisionFaceDetectorOptions.Builder()
+            .setContourMode(FirebaseVisionFaceDetectorOptions.ALL_CONTOURS)
+            .build()
+    val detector = FirebaseVision.getInstance().getVisionFaceDetector(realTimeOpts)
 
     private val deviceStateCallback = object : CameraDevice.StateCallback() {
         override fun onOpened(camera: CameraDevice) {
@@ -97,14 +115,17 @@ class PreviewFragment: Fragment(),ActivityCompat.OnRequestPermissionsResultCallb
 
 
     private val mOnImageAvailableListener = ImageReader.OnImageAvailableListener { reader ->
-        Log.d("Img", "onImageAvailable")
-        var image =reader.acquireNextImage()
-        image.close()
-//        val matrix = Matrix()
-//        matrix.postRotate(90f)
-//        var bmp = Bitmap.createBitmap(image as Bitmap, 0, 0, (image as Bitmap).width, (image as Bitmap).height, matrix, true)
-//        backgroundHandler.post(ImageSaver(image, mFile))
-
+//        Log.d("Img", "onImageAvailable")
+//        var image=reader.acquireNextImage()
+        val image = reader.acquireLatestImage()
+//        if(image!=null&&count_push<30){
+        if(image!=null&&!face_detected){
+                count_push++
+            Log.d(TAG,"request_number ${count_push}")
+            backgroundHandler.post(ImageSaver(image, mFile,detector,context!!,count_push,view,fragmentManager!!))
+        }else if(image!=null){
+            image.close()
+        }
     }
 
     fun closeCamera() {
@@ -147,7 +168,45 @@ class PreviewFragment: Fragment(),ActivityCompat.OnRequestPermissionsResultCallb
         } catch (e: CameraAccessException) {
             Log.d(TAG, "Unable to access camera");
         }
-        return deviceID[0];
+//        getSizes(lens)
+//        Log.d(TAG,"==========Sizes:\n"+sizes.toString())
+        try {
+            return deviceID[0];
+        }catch (e: IndexOutOfBoundsException){
+            AppDialog.ErrorDialog.newInstance("Can't connect to Camera, please restart your device.").show(fragmentManager,"ConnectionError")
+            return "not found"
+        }
+    }
+
+    fun getSizes(lens: Int){
+        val map = getCameraCharacteristics(cameraID(lens),CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+        sizes= map.getOutputSizes(SurfaceTexture::class.java)
+    }
+
+    fun expandTextureView(){
+        val aspect=0.75f
+        val metrics = DisplayMetrics()
+        activity!!.windowManager!!.defaultDisplay!!.getMetrics(metrics)
+        var screenWidth=metrics.widthPixels
+        var screenHeight=metrics.heightPixels
+        var finalWidth=screenWidth
+        var finalHeight=screenHeight
+        var heightDiff:Int=0
+        var widthDiff:Int=0
+        val screenAspectRatio=(screenWidth)/screenHeight
+        if(screenAspectRatio>=aspect) {
+            finalHeight = (screenWidth / aspect) as Int
+            heightDiff = finalHeight - screenHeight
+        }else{
+            finalWidth=(screenHeight*aspect).toInt()
+            widthDiff=finalWidth - screenWidth
+        }
+        var params:FrameLayout.LayoutParams=view!!.layoutParams as FrameLayout.LayoutParams
+        params.height=finalHeight
+        params.width=finalWidth
+        params.leftMargin=-(widthDiff/2)
+        params.topMargin=-(heightDiff/2)
+        view!!.layoutParams.apply { params }
     }
 
     fun connectCamera() {
@@ -166,8 +225,9 @@ class PreviewFragment: Fragment(),ActivityCompat.OnRequestPermissionsResultCallb
     }
 
     companion object {
-        private val TAG = PreviewFragment::class.qualifiedName;
-        public fun newInstance() = PreviewFragment();
+        private val TAG = PreviewFragment::class.qualifiedName
+        fun newInstance() = PreviewFragment()
+        var face_detected= false;
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
@@ -176,16 +236,13 @@ class PreviewFragment: Fragment(),ActivityCompat.OnRequestPermissionsResultCallb
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState);
-        activity?.window?.decorView?.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-        mFile= File(activity!!.applicationContext!!.getExternalFilesDir(null),"ERAAAA");
+        mFile= File(activity!!.applicationContext!!.getExternalFilesDir(null),"cache");
         if(!mFile.exists()){
             Log.d(TAG,"file saved")
             mFile.mkdirs()
             Log.d(TAG,mFile.absolutePath)
         }
-        mFile = File(mFile,"test.jpg")
-
+        mFile = File(mFile,"sdskjdkjsdk")
     }
 
     private val textureListener = object : TextureView.SurfaceTextureListener {
@@ -201,6 +258,7 @@ class PreviewFragment: Fragment(),ActivityCompat.OnRequestPermissionsResultCallb
         override fun onSurfaceTextureAvailable(surface: SurfaceTexture?, width: Int, height: Int) {
             Log.d(TAG, "SurfaceTexture is available\n width: ${width}\theight: ${height}");
             openCamera();
+            expandTextureView()
         }
     }
 
@@ -262,30 +320,113 @@ class PreviewFragment: Fragment(),ActivityCompat.OnRequestPermissionsResultCallb
             /**
              * The file we save the image into.
              */
-            private val file: File
+            private val file: File,
+
+            private val detector: FirebaseVisionFaceDetector,
+            private val context:Context,
+            private val count:Int,
+            private val view: View?,
+            private val fragmentManager: FragmentManager
     ) : Runnable {
 
         override fun run() {
             val buffer = image.planes[0].buffer
-            val bytes = ByteArray(buffer.remaining())
+            var bytes = ByteArray(buffer.remaining())
             buffer.get(bytes)
-            var output: FileOutputStream? = null
-            try {
-                output = FileOutputStream(file).apply {
-                    write(bytes)
-                }
-            } catch (e: IOException) {
-                Log.e(TAG, e.toString())
-            } finally {
-                image.close()
-                output?.let {
-                    try {
-                        it.close()
-                    } catch (e: IOException) {
-                        Log.e(TAG, e.toString())
-                    }
-                }
+            val bitmap = BitmapFactory.decodeByteArray(bytes,0,bytes.size)
+            var matrix = Matrix()
+            when(270){
+                (90)->matrix.postRotate(90f)
+                (180)->matrix.postRotate(180f)
+                (270)->matrix.postRotate(270f)
             }
+            try{
+                var rotatedBitmap = Bitmap.createBitmap(bitmap,0,0,bitmap.width,bitmap.height,matrix,true)
+                var output= FileOutputStream(file)
+                val size=rotatedBitmap.rowBytes*rotatedBitmap.height
+                var bufferedOutputStream = BufferedOutputStream(output,size)
+                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG,100,bufferedOutputStream)
+                bufferedOutputStream.flush()
+                bufferedOutputStream.close()
+                output.close()
+                var byteBuffer = ByteBuffer.allocate(size)
+                rotatedBitmap.copyPixelsToBuffer(byteBuffer)
+                val image = FirebaseVisionImage.fromFilePath(context,file.toUri())
+                detector.detectInImage(image)
+                        .addOnSuccessListener { faces->
+                            if(faces.size>0&&!face_detected){
+                                Toast.makeText(context,"Shakal dikh rahi hai",Toast.LENGTH_SHORT).show()
+                                face_detected=true
+                                AppDialog.ErrorDialog.newInstance("Face Detected").show(fragmentManager,"FACE_DETECTED")
+                            }
+                            Log.d(TAG,"========No. of faces detected:\t+${faces.size} on request number ${count}")
+                        }
+//                try {
+//                    output = FileOutputStream(file).apply {
+//                        write(bytes)
+//                    }
+//                    //Firebase Facedetection
+////                    val metadata = FirebaseVisionImageMetadata.Builder()
+////                            .setWidth(1080) // 480x360 is typically sufficient for
+////                            .setHeight(1920) // image recognition
+////                            .setFormat(FirebaseVisionImageMetadata.IMAGE_FORMAT_YV12)
+////                            .setRotation(FirebaseVisionImageMetadata.ROTATION_90)
+////                            .build()
+////                    Log.d(TAG,"\nWidth: ${image.width}\tHeight: ${image.height}")
+////                val detect_image = FirebaseVisionImage.fromFilePath(context,file.toUri())
+////                val detect_image = FirebaseVisionImage.fromByteArray(bytes,metadata)
+////                var detect_image = FirebaseVisionImage.fromMediaImage(image,FirebaseVisionImageMetadata.ROTATION_270)
+//////                try{
+////                detector.detectInImage(detect_image)
+////                        .addOnSuccessListener {faces->
+////                            Log.d(TAG,faces.size.toString())
+//////                            try{if(faces.isEmpty()){
+////////                                view.findViewById<TextView>(R.id.message).setText("Position Your Face Inside The Oval")
+//////                            }else{
+//////                                Toast.makeText(context,"face detected", Toast.LENGTH_SHORT).show()
+//////                            }}catch (e: Exception){
+//////                                Log.e(TAG,e.toString())
+//////                            }
+////                        }
+////                }catch (e: Exception){
+////                    Log.e(TAG,e.toString())
+////                }
+//                } catch (e: IOException) {
+//                    Log.e(TAG, e.toString())
+//                } finally {
+////                    image.close()
+//                    output?.let {
+//                        try {
+//                            it.close()
+//                        } catch (e: IOException) {
+//                            Log.e(TAG, e.toString())
+//                        }
+//                    }
+//                }
+            }catch(e: Exception){
+                e.printStackTrace()
+            }finally {
+                image.close()
+            }
+
+        }
+    }
+
+
+    fun rotateBitmap(bitmap: Bitmap,degree:Int):Bitmap?{
+        var matrix = Matrix()
+        when(degree){
+            (90)->matrix.setRotate(90f)
+            (180)->matrix.setRotate(180f)
+            (270)->matrix.setRotate(270f)
+        }
+        try{
+            var rotatedBitmap = Bitmap.createBitmap(bitmap,0,0,bitmap.width,bitmap.height,matrix,true)
+            bitmap.recycle()
+            return rotatedBitmap
+        }catch(e: Exception){
+            e.printStackTrace()
+            return null
         }
     }
 }

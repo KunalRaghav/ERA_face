@@ -5,15 +5,17 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <ImageView
         android:id="@+id/oval"
-        android:layout_width="220dp"
-        android:layout_height="400dp"
+        android:layout_width="260dp"
+        android:layout_height="300dp"
         android:src="@drawable/face_oval"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        android:layout_marginTop="30dp"
+        android:layout_marginTop="50dp"
+        android:tintMode="src_in"
         app:layout_constraintRight_toRightOf="parent"/>
     <TextView
-        android:layout_marginTop="50dp"
+        android:id="@+id/message"
+        android:layout_marginTop="70dp"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Position Your Face Inside The Oval"
