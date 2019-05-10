@@ -17,7 +17,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         if (null == savedInstanceState) {
             getSupportFragmentManager().beginTransaction()
-                    .replace(R.id.container, CameraFragment.newInstance())
+                    .replace(R.id.container, PreviewFragment.Companion.newInstance())
                     .commit();
         }
     }

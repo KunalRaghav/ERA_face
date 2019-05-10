@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1088755112086",
+    "firebase_url": "https://era-face.firebaseio.com",
+    "project_id": "era-face",
+    "storage_bucket": "era-face.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1088755112086:android:cad9e0a832fa7c3f",
+        "android_client_info": {
+          "package_name": "com.krsolutions.era"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1088755112086-6jvedhmp3im8isq3i7qlq8n16hmgthru.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.krsolutions.era",
+            "certificate_hash": "d4f4fc0b70f6dfe5be35c451b3a1615b75a2855a"
+          }
+        },
+        {
+          "client_id": "1088755112086-jb5jn9d98ssvcqqrfkb2slemo1a8jlru.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBl-_gXnouuwHlRhXGyAj44n5fQj2C9vm8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1088755112086-jb5jn9d98ssvcqqrfkb2slemo1a8jlru.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
